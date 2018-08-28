@@ -1,8 +1,5 @@
-BITS 64
 
-section .text
-    global _start
-
+; test shellcode, for it to work, it has to reset the stack state before exiting. Hence the 2 pops at the end.
 _start:
     xor rax, rax
     push rax

