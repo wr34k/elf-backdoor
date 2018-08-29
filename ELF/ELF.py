@@ -1,7 +1,7 @@
 #/usr/bin/env python3
 
 from struct import pack, unpack
-from ELFEnum import *
+from ELF.ELFEnum import *
 
 prettyHex = lambda x: (hex(x) if isinstance(x, int) else ' '.join(hex(i) for i in x))
 
@@ -116,13 +116,23 @@ class ELF(object):
             offset += outer.h_size
             self.p_memsz    = outer.up(outer.elf_file[offset:offset+outer.h_size])
             if outer.ei_class == 0x01:
-                self.p_flags = outer.up("I", outer.elf_file[offset:0x04])
+                self.p_flags = outer.up("I", outer.elf_file[offset:offset+0x04])
                 offset += 0x04
             self.p_align    = outer.up(outer.elf_file[offset:offset+outer.h_size])
             offset += outer.h_size
 
             self.off_end    = offset
             self.raw = outer.elf_file[self.off_start:self.off_end]
+
+        def prettyFlags(self):
+            flags = []
+            for flag in ProgramHeaderEnum.Flags:
+                if flag.value & self.p_flags:
+                    flags += [flag.name]
+            return ' | '.join(flags)
+
+        def setFlags(self, flags):
+            self.p_flags |= flags
 
         def print_program_header(self):
             print("="*40)
@@ -172,6 +182,9 @@ class ELF(object):
                     flags += [flag.name]
             return ' | '.join(flags)
 
+        def setFlags(self, flags):
+            self.sh_flags |= flags
+
         def print_section_header(self):
             print("="*40)
             print(f"SH Name:        {self.sh_name_str}")
@@ -184,6 +197,12 @@ class ELF(object):
             print(f"SH Info:        {prettyHex(self.sh_info)}")
             print(f"SH Addr Align:  {prettyHex(self.sh_addralign)}")
             print(f"SH Entry Size:  {prettyHex(self.sh_entsize)}")
+
+    def get_prog_hdr_id_from_offset(self, offset):
+        for idx in self.program_headers:
+            if offset in range(self.program_headers[idx].p_offset, self.program_headers[idx].p_offset+self.program_headers[idx].p_filesz):
+                return idx
+        return None
 
     def get_section_id_from_offset(self, offset):
         for idx in self.section_headers:

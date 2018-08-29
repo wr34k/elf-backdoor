@@ -73,6 +73,13 @@ class ProgramHeaderEnum(object):
         PT_LOPROC               = 0x70000000
         PT_HIPROC               = 0x7fffffff
 
+    class Flags(Enum):
+        PF_X                    = 0x1
+        PF_W                    = 0x2
+        PF_R                    = 0x4
+        PF_MASKOS               = 0x0ff00000
+        PF_NASKPROC             = 0xf0000000
+
 
 class SectionHeaderEnum(object):
     class Type(Enum):
