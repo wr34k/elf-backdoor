@@ -11,22 +11,22 @@ class ELF(object):
     def __init__(self, elf_file):
         self.elf_file = bytearray(elf_file)
         self.get_header_data()
-        self.program_headers = []
-        self.section_headers = []
+        self.program_headers = {}
+        self.section_headers = {}
 
         idx = 0
         for off in range(self.e_phoff, (self.e_phoff+(self.e_phnum*self.e_phentsize)), self.e_phentsize):
             ph = self.ProgramHeader(self, off)
             ph.idx = idx
             idx += 1
-            self.program_headers += [ph]
+            self.program_headers[ph.idx] = ph
 
         idx = 0
         for off in range(self.e_shoff, (self.e_shoff+(self.e_shnum*self.e_shentsize)), self.e_shentsize):
             sh = self.SectionHeader(self, off)
             sh.idx = idx
             idx += 1
-            self.section_headers += [sh]
+            self.section_headers[sh.idx] = sh
 
         self.get_section_names()
 
@@ -68,12 +68,12 @@ class ELF(object):
         self.e_shstridx     = self.up("H", self.elf_file[offset:offset+0x02])
 
     def get_section_names(self):
-        for sh in self.section_headers:
-            if sh.idx == self.e_shstridx:
-                names = self.elf_file[sh.sh_offset:sh.sh_offset+sh.sh_size]
+        for idx in self.section_headers:
+            if idx == self.e_shstridx:
+                names = self.elf_file[self.section_headers[idx].sh_offset:self.section_headers[idx].sh_offset+self.section_headers[idx].sh_size]
 
-        for i in range(len(self.section_headers)):
-            self.section_headers[i].sh_name_str = readString(names[self.section_headers[i].sh_name:])
+        for idx in self.section_headers:
+            self.section_headers[idx].sh_name_str = readString(names[self.section_headers[idx].sh_name:])
 
     def print_header(self):
         print(f"ELF Magic:          {prettyHex(self.ei_mag)}")
@@ -119,7 +119,7 @@ class ELF(object):
                 self.p_flags = outer.up("I", outer.elf_file[offset:0x04])
                 offset += 0x04
             self.p_align    = outer.up(outer.elf_file[offset:offset+outer.h_size])
-            offset += self.h_size
+            offset += outer.h_size
 
             self.off_end    = offset
             self.raw = outer.elf_file[self.off_start:self.off_end]
@@ -163,7 +163,7 @@ class ELF(object):
             offset += outer.h_size
 
             self.off_end = offset
-            self.raw = outer.elf_file[off_start:off_end]
+            self.raw = outer.elf_file[self.off_start:self.off_end]
 
         def prettyFlags(self):
             flags = []
@@ -185,10 +185,10 @@ class ELF(object):
             print(f"SH Addr Align:  {prettyHex(self.sh_addralign)}")
             print(f"SH Entry Size:  {prettyHex(self.sh_entsize)}")
 
-    def get_section_from_offset(self, offset):
-        for sh in self.section_headers:
-            if offset in range(sh.sh_offset, sh.sh_offset+sh.sh_size):
-                return sh
+    def get_section_id_from_offset(self, offset):
+        for idx in self.section_headers:
+            if offset in range(self.section_headers[idx].sh_offset, self.section_headers[idx].sh_offset+self.section_headers[idx].sh_size):
+                return idx
         return None
 
     def build_elf(self):
@@ -238,7 +238,8 @@ class ELF(object):
 
         # Program headers table
         off = self.e_phoff
-        for ph in self.program_headers:
+        for idx in self.program_headers:
+            ph = self.program_headers[idx]
             elf[off:off+0x04] = self.p("I", ph.p_type)
             off += 0x04
             if self.ei_class == 0x02:
@@ -262,7 +263,8 @@ class ELF(object):
 
         # Section headers table
         off = self.e_shoff
-        for sh in self.section_headers:
+        for idx in self.section_headers:
+            sh = self.section_headers[idx]
             elf[off:off+0x04] = self.p("I", sh.sh_name)
             off += 0x04
             elf[off:off+0x04] = self.p("I", sh.sh_type)

