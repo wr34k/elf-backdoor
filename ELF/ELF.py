@@ -115,12 +115,12 @@ class ELF(object):
             self.p_filesz   = outer.up(outer.elf_file[offset:offset+outer.h_size])
             offset += outer.h_size
             self.p_memsz    = outer.up(outer.elf_file[offset:offset+outer.h_size])
+            offset += outer.h_size
             if outer.ei_class == 0x01:
                 self.p_flags = outer.up("I", outer.elf_file[offset:offset+0x04])
                 offset += 0x04
             self.p_align    = outer.up(outer.elf_file[offset:offset+outer.h_size])
             offset += outer.h_size
-
             self.off_end    = offset
             self.raw = outer.elf_file[self.off_start:self.off_end]
 
@@ -317,3 +317,6 @@ def readString(bytestr):
         if bytestr[i] == 0x00:
             return str(string, 'utf-8', 'ignore')
         string += bytes([bytestr[i]])
+
+
+

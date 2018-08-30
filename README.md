@@ -1,9 +1,8 @@
 # ELF BACKDOOR
 
 Backdoor any ELF file by putting a shellcode in a codecave, and setting the entry_point to it.
+Now with coloured output!
 
-
-For now, it works well with x86_64, but doesn't with x86 binaries. I still have to debug to understand why. Also, the backdoored binary might be a bit broken cause ldd doesn't find any shared libs. Gotta find out why too.
 
 TODO:
 * Be able to trigger shellcode from anywhere in the code
