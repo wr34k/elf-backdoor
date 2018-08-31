@@ -152,7 +152,7 @@ def main():
         i=0
         legit_instrs = b""
         for (addr, size, mnem, op_str) in md.disasm_lite(bytes(elf.elf_file[entry:entry+0x10]), entry):
-            legit_instrs += elf.elf_file[entry:entry+size]
+            legit_instrs += elf.elf_file[entry+i:entry+size+i]
             i += size
             if i >= len(new_instr):
                 break
